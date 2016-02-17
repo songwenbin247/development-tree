@@ -1,0 +1,24 @@
+* TDM
+
+Currently defined compatibles:
+- fsl,ucc-tdm
+
+Time Division Multiplex, pins:
+
+RXD, TXD, RQ, TSYNC, RSYNC, RX_CLK, TX_CLK.
+
+
+Example:
+	tdma: ucc@2000 {
+		compatible = "fsl,ucc-tdm";
+		rx-clock-name = "clk8";
+		tx-clock-name = "clk9";
+		fsl,rx-sync-clock = "rsync_pin";
+		fsl,tx-sync-clock = "tsync_pin";
+		fsl,tx-timeslot = <0xfffffffe>;
+		fsl,rx-timeslot = <0xfffffffe>;
+		fsl,tdm-framer-type = "e1";
+		fsl,tdm-mode = "normal";
+		fsl,tdm-id = <0>;
+		fsl,siram-entry-id = <0>;
+	};

@@ -1,0 +1,94 @@
+/*
+ * Device Tree Include file for Freescale Layerscape-1043A family SoC.
+ *
+ * Copyright (C) 2014-2015, Freescale Semiconductor
+ *
+ * Mingkai Hu <Mingkai.hu@freescale.com>
+ *
+ * This file is licensed under the terms of the GNU General Public
+ * License version 2.  This program is licensed "as is" without any
+ * warranty of any kind, whether express or implied.
+ */
+
+/memreserve/ 0x80000000 0x00010000;
+
+/ {
+	compatible = "fsl,ls1043a";
+	interrupt-parent = <&gic>;
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	cpus {
+		#address-cells = <2>;
+		#size-cells = <0>;
+
+		cpu@0 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a53";
+			reg = <0x0 0x0>;
+			clocks = <1500000000>;
+		};
+
+		cpu@1 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a53";
+			reg = <0x0 0x1>;
+			clocks = <1500000000>;
+		};
+
+		cpu@2 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a53";
+			reg = <0x0 0x2>;
+			clocks = <1500000000>;
+		};
+
+		cpu@3 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a53";
+			reg = <0x0 0x3>;
+			clocks = <1500000000>;
+		};
+	};
+
+	timer {
+		compatible = "arm,armv8-timer";
+		interrupts = <1 13 0x1>, /* Physical Secure PPI */
+			     <1 14 0x1>, /* Physical Non-Secure PPI */
+			     <1 11 0x1>, /* Virtual PPI */
+			     <1 10 0x1>; /* Hypervisor PPI */
+	};
+
+	gic: interrupt-controller@1400000 {
+		compatible = "arm,gic-400";
+		#interrupt-cells = <3>;
+		interrupt-controller;
+		reg = <0x0 0x1401000 0 0x1000>, /* GICD */
+		      <0x0 0x1402000 0 0x1000>, /* GICC */
+		      <0x0 0x1404000 0 0x2000>, /* GICH */
+		      <0x0 0x1406000 0 0x2000>; /* GICV */
+		interrupts = <1 9 0xf08>;
+	};
+
+	duart0: serial@21c0500 {
+		device_type = "serial";
+		compatible = "fsl,ns16550", "ns16550";
+		reg = <0x00 0x21c0500 0x0 0x100>;
+		interrupts = <0 54 0x4>;
+		clock-frequency = <400000000>;
+	};
+
+	duart1: serial@21c0600 {
+		device_type = "serial";
+		compatible = "fsl,ns16550", "ns16550";
+		reg = <0x00 0x21c0600 0x0 0x100>;
+		interrupts = <0 54 0x4>;
+		clock-frequency = <400000000>;
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x0 0x80000000 0 0x80000000>;
+		      /* DRAM space 1 - 2 GB DRAM */
+	};
+};
