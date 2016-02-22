@@ -13,7 +13,8 @@
 #include <asm/uaccess.h>
 #include <linux/delay.h>
 #include <linux/string.h>
-
+#include <linux/list.h>
+#include <linux/seq_file.h>
 struct proc_dir_entry *proc_microDB;
 struct proc_dir_entry *proc_list;
 struct proc_dir_entry *proc_rbtree;
@@ -21,8 +22,18 @@ struct proc_dir_entry *proc_hash;
 
 struct proc_dir_entry *proc_add;
 struct proc_dir_entry *proc_del;
+struct proc_dir_entry *proc_info;
 
-const char type_list[][10] = {{"list"}, {"rbtree"}, {"hash"}};
+LIST_HEAD(head_file);
+
+struct file_type
+{
+	const char *type;
+	char name[NAME_MAX];
+	struct list_head list;
+};
+
+const char type_list[][10] = {{"list"}, {"rbtree"}, {"hash"}, {"none"}};
 
 static int file_name_parse (char *file_name)
 {
@@ -35,23 +46,22 @@ static int file_name_parse (char *file_name)
 	*index = '\0';
 	index++;
 	for (i = 0; i < sizeof(type_list)/sizeof(*type_list); ++i){
-		printk("file_name = %s  type = %s \n",file_name,index);
 		if(!strncmp(type_list[i],index, strlen(type_list[i])))
 			break;
 	}
 	
-	if (i >= sizeof(type_list) / sizeof(*type_list))
+	if (i >= sizeof(type_list) / sizeof(*type_list) - 1)
 		goto file_error;
 	
 	return i;
 
 file_error:
 	printk(KERN_ERR "File name error, must end of ");
-	for (i = 0; i < sizeof(type_list)/sizeof(*type_list); ++i){
+	for (i = 0; i < sizeof(type_list)/sizeof(*type_list) - 1; ++i){
 		printk(KERN_ERR ".%s ",type_list[i]);
 	}
 	printk(KERN_ERR "\n");
-	return -EFAULT;
+	return sizeof(type_list)/sizeof(*type_list) - 1;
 }
 
 static int add_open(struct inode *inode, struct file *file)
@@ -63,30 +73,38 @@ static ssize_t add_write(struct file *file, const char __user *buf, size_t size,
 {
 	char file_name[NAME_MAX];       			// = file->private_data;
 	int type;
+	struct file_type *entry;
+
 	if (unlikely(size > NAME_MAX))
 		size = NAME_MAX;
 	
 	if (copy_from_user(file_name,buf,size))
-		return -EFAULT;	
+		return -EFAULT;
 
-	if ((type = file_name_parse(file_name)) >= 0){
-		switch(type)
-		{
-			case 0:
-				printk(KERN_INFO "Add a list file: %s\n",file_name);
-				break;				
-			case 1:
-				printk(KERN_INFO "Add a rbtree file: %s\n",file_name);
-				break;				
-			case 2:
-				printk(KERN_INFO "Add a hashfile: %s\n",file_name);
-				break;				
-			default:
-				printk(KERN_INFO "Add i = %d\n",type);
-		}
+	type = file_name_parse(file_name);
+	entry = kmalloc(sizeof(struct file_type), GFP_KERNEL);
+	if (!entry){
+		return -ENOMEM;
 	}
 
+	strcpy(entry->name,file_name);
+	entry->type = type_list[type];
+	list_add(&entry->list, &head_file);
 
+	switch(type)
+	{
+		case 0:
+			printk(KERN_INFO "Add a list file: %s\n",file_name);
+			break;
+		case 1:
+			printk(KERN_INFO "Add a rbtree file: %s\n",file_name);
+			break;			
+		case 2:
+			printk(KERN_INFO "Add a hashfile: %s\n",file_name);
+			break;	
+		default:
+			printk(KERN_INFO "Add i = %d\n",type);
+	}
 
 	return size;
 }
@@ -111,31 +129,43 @@ static ssize_t del_write(struct file *file, const char __user *buf, size_t size,
 {
 	char file_name[NAME_MAX];       			// = file->private_data;
 	int type;
+	struct file_type *entry;
+	struct list_head *list_entry;
 	if (unlikely(size > NAME_MAX))
 		size = NAME_MAX;
-	
-	if (copy_from_user(file_name,buf,size))
-		return -EFAULT;	
 
-	if ((type = file_name_parse(file_name)) > 0){
-		switch(type)
-		{
-			case 0:
-				printk(KERN_INFO "Remove a list file: %s\n",file_name);
-				break;				
-			case 1:
-				printk(KERN_INFO "Remove a rbtree file: %s\n",file_name);
-				break;				
-			case 2:
-				printk(KERN_INFO "Remove a hash file: %s\n",file_name);
-				break;				
-			default:
-				printk(KERN_INFO "remove i = %d\n",type);
+	if (copy_from_user(file_name,buf,size))
+		return -EFAULT;
+
+	type = file_name_parse(file_name);
+	list_for_each(list_entry, &head_file){
+		entry = list_entry(list_entry, struct file_type, list);
+		if (!strcmp(file_name,entry->name) && type_list[type] == entry->type){
+			break;
 		}
 	}
+	if (list_entry == &head_file){
+		printk(KERN_INFO "file name error\n");
+		return -EFAULT;
+	}
 
+	list_del(&entry->list);
+	kfree(entry);
 
-
+	switch(type)
+	{
+		case 0:
+			printk(KERN_INFO "Remove a list file: %s\n",file_name);
+			break;
+		case 1:
+			printk(KERN_INFO "Remove a rbtree file: %s\n",file_name);
+			break;
+		case 2:
+			printk(KERN_INFO "Remove a hash file: %s\n",file_name);
+			break;
+		default:
+			printk(KERN_INFO "Remove a none file: %s\n",file_name);
+	}
 	return size;
 }
 
@@ -149,6 +179,63 @@ static const struct file_operations proc_remove_operations = {
 	.write = del_write,
 	.release = del_release,
 };
+int next_flag = 0;
+static void *int_seq_read_start(struct seq_file *f, loff_t *pos)
+{
+	printk("filename       type\n");
+	next_flag = 1;
+	return list_empty(&head_file) ? NULL :  list_first_entry(&head_file, struct file_type, list);
+}
+
+static void *int_seq_read_next(struct seq_file *f, void *v, loff_t *pos)
+{
+	struct list_head *list_entry;
+	int i = 0;
+	next_flag++;
+	list_for_each(list_entry, &head_file){
+		i++;
+	//	printk("----->%s %s i = %d l = %d\n",list_entry(list_entry, struct file_type, list)->name, list_entry(list_entry, struct file_type, list)->type ,i ,next_flag);
+
+		if(i == next_flag){
+			return  list_entry(list_entry, struct file_type, list);
+		}
+	}
+	return NULL;
+}
+
+static void int_seq_read_stop(struct seq_file *f, void *v)
+{
+	printk("---------END-------------\n");
+	/* Nothing to do */
+}
+
+static int show_read(struct seq_file *f, void *v)
+{
+	printk("%s            %s\n",((struct file_type *)v)->name, ((struct file_type *)v)->type);
+	return 0;
+}
+
+static const struct seq_operations int_seq_read_ops = {
+	.start = int_seq_read_start,
+	.next  = int_seq_read_next,
+	.stop  = int_seq_read_stop,
+	.show  = show_read,
+};
+
+static int read_open(struct inode *inode, struct file *filp)
+{
+//	printk("-->%s: %d\n",__FUNCTION__,__LINE__);
+	return seq_open(filp, &int_seq_read_ops);
+}
+
+static const struct file_operations proc_read_operations = {
+	.owner = THIS_MODULE,
+	.open = read_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = seq_release,
+};
+
 
 static int __init rbdev_init(void)
 {
@@ -158,6 +245,7 @@ static int __init rbdev_init(void)
 	}
 	proc_add = proc_create("add", S_IWUGO, proc_microDB, &proc_add_operations);
 	proc_del = proc_create("remove", S_IWUGO, proc_microDB, &proc_remove_operations);
+	proc_info = proc_create("info", S_IRUGO, proc_microDB, &proc_read_operations);
 	
 	proc_list = proc_mkdir("list", proc_microDB); 
 	proc_rbtree = proc_mkdir("rbtree", proc_microDB);
