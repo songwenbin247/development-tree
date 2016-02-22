@@ -40,12 +40,14 @@ static int file_name_parse (char *file_name)
 	char *index;
 	int i;
 	index = strrchr(file_name, '.');
+	printk("--->%s:%s:%d\n",__FILE__,__func__,__LINE__);
 	if (!index)
 		goto file_error;
 	
 	*index = '\0';
 	index++;
 	for (i = 0; i < sizeof(type_list)/sizeof(*type_list); ++i){
+	printk("--->%s:%s:%d\n",__FILE__,__func__,__LINE__);
 		if(!strncmp(type_list[i],index, strlen(type_list[i])))
 			break;
 	}
@@ -78,8 +80,9 @@ static ssize_t add_write(struct file *file, const char __user *buf, size_t size,
 	if (unlikely(size > NAME_MAX))
 		size = NAME_MAX;
 	
-	if (copy_from_user(file_name,buf,size))
+	if (copy_from_user(file_name,buf,size)){
 		return -EFAULT;
+	}
 
 	type = file_name_parse(file_name);
 	entry = kmalloc(sizeof(struct file_type), GFP_KERNEL);
@@ -130,7 +133,6 @@ static ssize_t del_write(struct file *file, const char __user *buf, size_t size,
 	char file_name[NAME_MAX];       			// = file->private_data;
 	int type;
 	struct file_type *entry;
-	struct list_head *list_entry;
 	if (unlikely(size > NAME_MAX))
 		size = NAME_MAX;
 
@@ -138,18 +140,17 @@ static ssize_t del_write(struct file *file, const char __user *buf, size_t size,
 		return -EFAULT;
 
 	type = file_name_parse(file_name);
-	list_for_each(list_entry, &head_file){
-		entry = list_entry(list_entry, struct file_type, list);
+	list_for_each_entry(entry, &head_file, list){
 		if (!strcmp(file_name,entry->name) && type_list[type] == entry->type){
-			break;
+			break;	
 		}
 	}
-	if (list_entry == &head_file){
+	if (&entry->list == &head_file){
 		printk(KERN_INFO "file name error\n");
 		return -EFAULT;
 	}
 
-	list_del(&entry->list);
+	list_del(&entry->list); 
 	kfree(entry);
 
 	switch(type)
@@ -179,39 +180,25 @@ static const struct file_operations proc_remove_operations = {
 	.write = del_write,
 	.release = del_release,
 };
-int next_flag = 0;
 static void *int_seq_read_start(struct seq_file *f, loff_t *pos)
 {
-	printk("filename       type\n");
-	next_flag = 1;
-	return list_empty(&head_file) ? NULL :  list_first_entry(&head_file, struct file_type, list);
+	return  seq_list_start(&head_file, *pos);
 }
 
 static void *int_seq_read_next(struct seq_file *f, void *v, loff_t *pos)
 {
-	struct list_head *list_entry;
-	int i = 0;
-	next_flag++;
-	list_for_each(list_entry, &head_file){
-		i++;
-	//	printk("----->%s %s i = %d l = %d\n",list_entry(list_entry, struct file_type, list)->name, list_entry(list_entry, struct file_type, list)->type ,i ,next_flag);
-
-		if(i == next_flag){
-			return  list_entry(list_entry, struct file_type, list);
-		}
-	}
-	return NULL;
+	return seq_list_next(v, &head_file, pos);
 }
 
 static void int_seq_read_stop(struct seq_file *f, void *v)
 {
-	printk("---------END-------------\n");
+	seq_printf(f, "---------END-------------\n");
 	/* Nothing to do */
 }
 
 static int show_read(struct seq_file *f, void *v)
 {
-	printk("%s            %s\n",((struct file_type *)v)->name, ((struct file_type *)v)->type);
+	seq_printf(f, "%s            %s\n",list_entry(v, struct file_type, list)->name, list_entry(v, struct file_type, list)->type);
 	return 0;
 }
 
@@ -224,7 +211,7 @@ static const struct seq_operations int_seq_read_ops = {
 
 static int read_open(struct inode *inode, struct file *filp)
 {
-//	printk("-->%s: %d\n",__FUNCTION__,__LINE__);
+	printk("-->%s: %d\n",__FUNCTION__,__LINE__);
 	return seq_open(filp, &int_seq_read_ops);
 }
 
@@ -271,4 +258,3 @@ MODULE_DESCRIPTION("rbdev dummy driver");
 MODULE_LICENSE("GPL");
 module_init(rbdev_init);
 module_exit(rbdev_exit);
-
